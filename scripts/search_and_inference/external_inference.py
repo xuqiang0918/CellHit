@@ -1,3 +1,4 @@
+import os
 import sys
 sys.path.append('./../../')
 
@@ -29,7 +30,11 @@ def external_inference(drugID,
     #obtain the best parameters from the search object
     with open(models_path/f'{int(drugID)}.pkl', 'rb') as f:
         best_params = pickle.load(f)['best_params']
-        best_params['device'] = f"cuda:{kwargs['gpu_id']}"
+        # [sdaa-adapt] 设备由环境变量控制（SDAA 平台默认 CPU）
+        best_params['device'] = os.environ.get('CELLHIT_DEVICE', f"cuda:{kwargs['gpu_id']}")
+        # [sdaa-adapt] CPU 设备不支持 gradient_based 采样
+        if not str(best_params['device']).startswith('cuda') and best_params.get('sampling_method') == 'gradient_based':
+            best_params['sampling_method'] = 'uniform'
 
     data_dict = prepare_data(drugID=drugID,
                              dataset=dataset,

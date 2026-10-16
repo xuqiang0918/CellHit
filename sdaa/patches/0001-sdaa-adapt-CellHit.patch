@@ -1,0 +1,71 @@
+diff --git a/CellHit/models/auto_models.py b/CellHit/models/auto_models.py
+index 162f797..17aa01f 100644
+--- a/CellHit/models/auto_models.py
++++ b/CellHit/models/auto_models.py
+@@ -1,3 +1,5 @@
++import os
++
+ from xgboost import XGBRegressor
+ import xgboost as xgb
+ from tqdm.auto import tqdm
+@@ -46,11 +48,16 @@ class AutoXGBRegressor:
+             'lambda': trial.suggest_float('lambda',0.5,3),
+             'sampling_method': trial.suggest_categorical('sampling_method',['uniform','gradient_based']),
+             'num_parallel_tree': self.num_parallel_tree,
+-            'tree_method': 'hist',  # Enable GPU acceleration
+-            'device': f'cuda:{self.gpuID}',  # Use GPU acceleration
++            'tree_method': 'hist',
++            # [sdaa-adapt] 设备由环境变量控制（SDAA 平台 xgboost 无 CUDA 后端，默认 CPU）
++            'device': os.environ.get('CELLHIT_DEVICE', f'cuda:{self.gpuID}'),
+             'objective': 'reg:squarederror',
+             }
+ 
++        # [sdaa-adapt] CPU 设备不支持 gradient_based 采样，强制 uniform
++        if not str(params['device']).startswith('cuda'):
++            params['sampling_method'] = 'uniform'
++
+         params['eval_metric'] = 'rmse' # Evaluation metric
+ 
+         if cv_data:
+diff --git a/CellHit/search_and_inference/hp_search.py b/CellHit/search_and_inference/hp_search.py
+index 572cc41..fbe075f 100644
+--- a/CellHit/search_and_inference/hp_search.py
++++ b/CellHit/search_and_inference/hp_search.py
+@@ -1,3 +1,5 @@
++import os
++
+ from ..models import AutoXGBRegressor
+ from ..data import DatasetLoader, GeneGetter
+ 
+@@ -31,7 +33,8 @@ def search(n_trials=300, n_startup_trials=100,
+ 
+     # Select best parameters (same as before)
+     best_params = max(xgb.study.best_trials, key=lambda t: t.values[1]).params
+-    best_params['device'] = f'cuda:{gpuID}'
++    # [sdaa-adapt] 设备由环境变量控制（SDAA 平台默认 CPU）
++    best_params['device'] = os.environ.get('CELLHIT_DEVICE', f'cuda:{gpuID}')
+     best_params['tree_method'] = 'hist'
+     best_params['objective'] = 'reg:squarederror'
+     best_params['eval_metric'] = 'rmse'
+diff --git a/scripts/search_and_inference/external_inference.py b/scripts/search_and_inference/external_inference.py
+index 84009c8..14b63b4 100644
+--- a/scripts/search_and_inference/external_inference.py
++++ b/scripts/search_and_inference/external_inference.py
+@@ -1,3 +1,4 @@
++import os
+ import sys
+ sys.path.append('./../../')
+ 
+@@ -29,7 +30,11 @@ def external_inference(drugID,
+     #obtain the best parameters from the search object
+     with open(models_path/f'{int(drugID)}.pkl', 'rb') as f:
+         best_params = pickle.load(f)['best_params']
+-        best_params['device'] = f"cuda:{kwargs['gpu_id']}"
++        # [sdaa-adapt] 设备由环境变量控制（SDAA 平台默认 CPU）
++        best_params['device'] = os.environ.get('CELLHIT_DEVICE', f"cuda:{kwargs['gpu_id']}")
++        # [sdaa-adapt] CPU 设备不支持 gradient_based 采样
++        if not str(best_params['device']).startswith('cuda') and best_params.get('sampling_method') == 'gradient_based':
++            best_params['sampling_method'] = 'uniform'
+ 
+     data_dict = prepare_data(drugID=drugID,
+                              dataset=dataset,

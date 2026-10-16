@@ -1,3 +1,5 @@
+import os
+
 from xgboost import XGBRegressor
 import xgboost as xgb
 from tqdm.auto import tqdm
@@ -46,10 +48,15 @@ class AutoXGBRegressor:
             'lambda': trial.suggest_float('lambda',0.5,3),
             'sampling_method': trial.suggest_categorical('sampling_method',['uniform','gradient_based']),
             'num_parallel_tree': self.num_parallel_tree,
-            'tree_method': 'hist',  # Enable GPU acceleration
-            'device': f'cuda:{self.gpuID}',  # Use GPU acceleration
+            'tree_method': 'hist',
+            # [sdaa-adapt] 设备由环境变量控制（SDAA 平台 xgboost 无 CUDA 后端，默认 CPU）
+            'device': os.environ.get('CELLHIT_DEVICE', f'cuda:{self.gpuID}'),
             'objective': 'reg:squarederror',
             }
+
+        # [sdaa-adapt] CPU 设备不支持 gradient_based 采样，强制 uniform
+        if not str(params['device']).startswith('cuda'):
+            params['sampling_method'] = 'uniform'
 
         params['eval_metric'] = 'rmse' # Evaluation metric
 

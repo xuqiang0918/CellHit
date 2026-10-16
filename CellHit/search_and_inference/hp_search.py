@@ -1,3 +1,5 @@
+import os
+
 from ..models import AutoXGBRegressor
 from ..data import DatasetLoader, GeneGetter
 
@@ -31,7 +33,8 @@ def search(n_trials=300, n_startup_trials=100,
 
     # Select best parameters (same as before)
     best_params = max(xgb.study.best_trials, key=lambda t: t.values[1]).params
-    best_params['device'] = f'cuda:{gpuID}'
+    # [sdaa-adapt] 设备由环境变量控制（SDAA 平台默认 CPU）
+    best_params['device'] = os.environ.get('CELLHIT_DEVICE', f'cuda:{gpuID}')
     best_params['tree_method'] = 'hist'
     best_params['objective'] = 'reg:squarederror'
     best_params['eval_metric'] = 'rmse'
